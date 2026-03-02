@@ -12,6 +12,7 @@ import (
 	"github.com/tristanmatthias/llmdoc/internal/hasher"
 	"github.com/tristanmatthias/llmdoc/internal/index"
 	"github.com/tristanmatthias/llmdoc/internal/llm"
+	"github.com/tristanmatthias/llmdoc/internal/pricing"
 	"github.com/tristanmatthias/llmdoc/internal/scanner"
 )
 
@@ -51,10 +52,11 @@ func (s Status) String() string {
 
 // Result is the outcome of attempting to annotate a single file.
 type Result struct {
-	File       scanner.FileInfo
-	Status     Status
-	TokensUsed llm.TokenUsage
-	Err        error
+	File            scanner.FileInfo
+	Status          Status
+	TokensUsed      llm.TokenUsage
+	EstimatedTokens int // estimated input tokens; populated during dry-run instead of TokensUsed
+	Err             error
 }
 
 // Options controls annotate behavior.
@@ -242,7 +244,7 @@ func processFile(ctx context.Context, file scanner.FileInfo, cfg *config.Config,
 	}
 
 	if opts.DryRun {
-		return Result{File: file, Status: status}, nil
+		return Result{File: file, Status: status, EstimatedTokens: pricing.EstimateInputTokens(stripped)}, nil
 	}
 
 	req := llm.SummaryRequest{

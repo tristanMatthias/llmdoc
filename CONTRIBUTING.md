@@ -28,8 +28,8 @@ The test suite does not call any LLM APIs — it uses in-process mock providers.
 ## Project structure
 
 ```
-main.go                        Entry point
-cmd/                           Cobra subcommands (annotate, check, dump, init)
+main.go                        Entry point; injects version string at build time
+cmd/                           Cobra subcommands (annotate, check, dump, init, update)
 internal/
   annotator/annotator.go       Orchestration: goroutine pool, change detection, write-back
   comment/
@@ -44,7 +44,9 @@ internal/
     anthropic.go               Anthropic implementation
     openai.go                  OpenAI implementation
     factory.go                 NewProvider()
-  scanner/scanner.go           Walk(), matchesIgnore()
+  pricing/pricing.go           Model price table, token estimation, cost projection
+  scanner/scanner.go           Walk(), matchesIgnore(), readGitignore()
+  updater/updater.go           LatestVersion(), IsNewer(), Update()
 ```
 
 ## Adding a language
@@ -91,7 +93,13 @@ case "myprovider":
     return NewMyProvider(cfg.APIKey, cfg.Model), nil
 ```
 
-3. Update the error message in `factory.go` and the `StarterYAML` comment in `config.go` to mention the new provider.
+3. Add pricing data for the provider's models in `internal/pricing/pricing.go`:
+
+```go
+"myprovider-model-name": {InputPerMTok: 1.00, OutputPerMTok: 3.00, PriceURL: "https://myprovider.com/pricing"},
+```
+
+4. Update the error message in `factory.go` and the `StarterYAML` comment in `config.go` to mention the new provider.
 
 ## Code style
 
@@ -113,6 +121,6 @@ For large changes, open an issue first to discuss the approach.
 
 Please use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 - Your OS and Go version (`go version`)
-- The llmdoc version (`llmdoc --version` once that flag exists, or the commit SHA)
+- The llmdoc version (`llmdoc --version`)
 - The smallest `.llmdoc.yaml` that reproduces the issue
 - Full command output (redact any API keys)

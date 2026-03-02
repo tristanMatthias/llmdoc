@@ -157,7 +157,7 @@ provider: anthropic
 api_key: ""
 
 # Model to use for generating summaries
-model: claude-sonnet-4-6
+model: claude-haiku-4-5
 
 # File extensions to annotate
 extensions:

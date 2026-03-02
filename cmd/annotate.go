@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tristanmatthias/llmdoc/internal/annotator"
 	"github.com/tristanmatthias/llmdoc/internal/llm"
+	"github.com/tristanmatthias/llmdoc/internal/pricing"
 )
 
 var annotateCmd = &cobra.Command{
@@ -107,6 +108,10 @@ re-annotate all files regardless.`,
 			}
 		}
 
+		if dryRun && !quiet {
+			printCostEstimate(counts, results, cfg.Model)
+		}
+
 		if !quiet {
 			elapsed := time.Since(start).Round(time.Millisecond)
 			fmt.Printf("\nSummary: %d created, %d updated, %d unchanged, %d migrated, %d cleaned, %d errors  (%s)\n",
@@ -196,6 +201,36 @@ func (p *progress) stop() {
 	close(p.stopCh)
 	<-p.doneCh
 	fmt.Print("\r\033[K") // erase the spinner line
+}
+
+// printCostEstimate prints a projected cost for a dry-run based on file sizes
+// and the configured model's published pricing.
+func printCostEstimate(counts map[annotator.Status]int, results []annotator.Result, model string) {
+	toAnnotate := counts[annotator.StatusCreated] + counts[annotator.StatusUpdated]
+	if toAnnotate == 0 {
+		return
+	}
+
+	var totalInputTokens int
+	for _, r := range results {
+		if r.Status == annotator.StatusCreated || r.Status == annotator.StatusUpdated {
+			totalInputTokens += r.EstimatedTokens
+		}
+	}
+	totalOutputTokens := toAnnotate * pricing.SummaryOutputTokens
+
+	fmt.Printf("\nCost estimate for %d file(s):\n", toAnnotate)
+	p, ok := pricing.ForModel(model)
+	if !ok {
+		fmt.Printf("  model  %s (no pricing data — check provider docs)\n", model)
+		fmt.Printf("  tokens ~%s input / ~%s output\n", fmtInt(totalInputTokens), fmtInt(totalOutputTokens))
+		return
+	}
+	cost := p.Estimate(totalInputTokens, totalOutputTokens)
+	fmt.Printf("  model  %s  ($%.2f in / $%.2f out per MTok)\n", model, p.InputPerMTok, p.OutputPerMTok)
+	fmt.Printf("  tokens ~%s input / ~%s output\n", fmtInt(totalInputTokens), fmtInt(totalOutputTokens))
+	fmt.Printf("  cost   ~$%.4f\n", cost)
+	fmt.Printf("  prices from %s — actual usage may vary\n", p.PriceURL)
 }
 
 // shouldPrint reports whether a result should be printed to the user.
