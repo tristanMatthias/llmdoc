@@ -48,6 +48,12 @@ type anthropicResponse struct {
 }
 
 func (p *AnthropicProvider) Summarize(ctx context.Context, req SummaryRequest) (string, TokenUsage, error) {
+	return withRetry(ctx, func() (string, TokenUsage, error) {
+		return p.summarizeOnce(ctx, req)
+	})
+}
+
+func (p *AnthropicProvider) summarizeOnce(ctx context.Context, req SummaryRequest) (string, TokenUsage, error) {
 	payload := anthropicRequest{
 		Model:     p.model,
 		MaxTokens: 512,
@@ -65,7 +71,14 @@ func (p *AnthropicProvider) Summarize(ctx context.Context, req SummaryRequest) (
 	}
 
 	if result.Error != nil {
-		return "", TokenUsage{}, fmt.Errorf("anthropic API error (%s): %s", result.Error.Type, result.Error.Message)
+		apiErr := fmt.Errorf("anthropic API error (%s): %s", result.Error.Type, result.Error.Message)
+		if result.Error.Type == "overloaded_error" {
+			return "", TokenUsage{}, retryableError{apiErr}
+		}
+		return "", TokenUsage{}, apiErr
+	}
+	if status == http.StatusTooManyRequests || status == 529 {
+		return "", TokenUsage{}, retryableError{fmt.Errorf("anthropic API returned HTTP %d: %s", status, rawBody)}
 	}
 	if status != http.StatusOK {
 		return "", TokenUsage{}, fmt.Errorf("anthropic API returned HTTP %d: %s", status, rawBody)

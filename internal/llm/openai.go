@@ -45,6 +45,12 @@ type openaiResponse struct {
 }
 
 func (p *OpenAIProvider) Summarize(ctx context.Context, req SummaryRequest) (string, TokenUsage, error) {
+	return withRetry(ctx, func() (string, TokenUsage, error) {
+		return p.summarizeOnce(ctx, req)
+	})
+}
+
+func (p *OpenAIProvider) summarizeOnce(ctx context.Context, req SummaryRequest) (string, TokenUsage, error) {
 	payload := openaiRequest{
 		Model:     p.model,
 		MaxTokens: 512,
@@ -63,7 +69,14 @@ func (p *OpenAIProvider) Summarize(ctx context.Context, req SummaryRequest) (str
 	}
 
 	if result.Error != nil {
-		return "", TokenUsage{}, fmt.Errorf("openai API error (%s): %s", result.Error.Type, result.Error.Message)
+		apiErr := fmt.Errorf("openai API error (%s): %s", result.Error.Type, result.Error.Message)
+		if result.Error.Type == "rate_limit_exceeded" {
+			return "", TokenUsage{}, retryableError{apiErr}
+		}
+		return "", TokenUsage{}, apiErr
+	}
+	if status == http.StatusTooManyRequests {
+		return "", TokenUsage{}, retryableError{fmt.Errorf("openai API returned HTTP %d: %s", status, rawBody)}
 	}
 	if status != http.StatusOK {
 		return "", TokenUsage{}, fmt.Errorf("openai API returned HTTP %d: %s", status, rawBody)

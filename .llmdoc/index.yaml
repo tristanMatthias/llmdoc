@@ -103,10 +103,10 @@ files:
         generated: 2026-03-02T00:21:09.250408Z
         version: 1
     internal/llm/anthropic.go:
-        summary: Implements the `AnthropicProvider` type, which satisfies the `Provider` interface by calling the Anthropic Messages API (`/v1/messages`) to generate code summaries. The `Summarize` method constructs an `anthropicRequest` with a system prompt and user message, posts it via HTTP with Anthropic-specific headers, and extracts the text response along with `TokenUsage` data, handling both API errors and non-200 HTTP status codes.
-        hash: cd3711360b775d1e85c13cab5bff882304d7cf0fbb64522b74596afeaedb2738
+        summary: Implements the `AnthropicProvider` type, which satisfies the `Provider` interface by calling the Anthropic Messages API to generate code summaries. The `Summarize` method wraps `summarizeOnce` with retry logic, constructs an `anthropicRequest` with a system prompt and user message, posts it via HTTP with Anthropic-specific headers, and extracts the text response along with `TokenUsage` data. It handles API errors (including retryable `overloaded_error` and HTTP 429/529 status codes) and validates that the response contains text content.
+        hash: 1bbd58e09022af948468689b4298e4de5ec251ae7d3037d3f0c00e2be666f9f8
         model: claude-haiku-4-5
-        generated: 2026-03-02T06:44:07.835386Z
+        generated: 2026-03-02T06:57:17.424274Z
         version: 1
     internal/llm/factory.go:
         summary: Instantiates and returns a concrete `Provider` implementation (`AnthropicProvider` or `OpenAIProvider`) based on the `config.Config` fields, rejecting unknown providers or missing API keys with descriptive errors.
@@ -115,16 +115,16 @@ files:
         generated: 2026-03-02T00:21:09.250629Z
         version: 1
     internal/llm/openai.go:
-        summary: OpenAIProvider implements the Provider interface by sending requests to the OpenAI Chat Completions API. The Summarize method constructs an openaiRequest with system and user messages, POSTs it to the Chat Completions endpoint with Bearer token authorization, and parses the openaiResponse to extract the generated text and token usage. It validates the response status, checks for API errors, and ensures at least one choice exists before returning the first message's content along with TokenUsage populated from prompt and completion token counts.
-        hash: 7d955860d0c3f52bde54d933d31f300b71b3f201f32b53d297ed16c7f295d20d
+        summary: OpenAIProvider implements the Provider interface by sending requests to the OpenAI Chat Completions API with configurable max_tokens of 512. The Summarize method wraps summarizeOnce with retry logic, constructs an openaiRequest with system and user messages, POSTs to the Chat Completions endpoint with Bearer token authorization, and parses the openaiResponse to extract generated text and token usage. Error handling distinguishes between rate_limit_exceeded errors (wrapped as retryable) and other API or HTTP errors, validates status codes, and ensures at least one choice exists before returning the first message's content alongside TokenUsage populated from prompt and completion token counts.
+        hash: 15069de4484e4e53d888d5dc0000479c17d2616a9665904bb82dd57031b346c7
         model: claude-haiku-4-5
-        generated: 2026-03-02T06:44:08.780604Z
+        generated: 2026-03-02T06:57:17.831894Z
         version: 1
     internal/llm/provider.go:
-        summary: 'Defines the core LLM abstraction layer: the `Provider` interface with a single `Summarize` method, the `SummaryRequest` and `TokenUsage` data types, and the `systemPrompt` and `buildPrompt` function used to construct prompts for LLM backends. The `baseClient` struct provides shared HTTP functionality with a `postJSON` method for making JSON requests and parsing responses, forming the foundation for concrete provider implementations.'
-        hash: a8865a479c2b96906be889eccea7c0f2b886844bb633eeb0d480a4ecfa867a6e
+        summary: Defines the core LLM abstraction layer with the `Provider` interface and `SummaryRequest` data type, alongside `baseClient` for HTTP-based providers with a `postJSON` method for marshaling, requesting, and parsing JSON responses. Implements a `withRetry` function that retries failed operations up to 5 times with exponential backoff and jitter, and wraps retry-eligible errors in a `retryableError` type. The `systemPrompt` constant and `buildPrompt` function construct LLM prompts for generating or updating file summaries, with support for incremental updates based on previous annotations.
+        hash: 77d9dc520cf877c95aed7bf8b5bb38bb9d3550c0f41cd0f4f7a71a6a3791e249
         model: claude-haiku-4-5
-        generated: 2026-03-02T06:44:09.182197Z
+        generated: 2026-03-02T06:57:18.13194Z
         version: 1
     internal/pricing/pricing.go:
         summary: Defines pricing data for LLM models from Anthropic and OpenAI, with per-token costs in USD and utilities to estimate request costs and token counts. The `ForModel` function matches model names by longest prefix to support version variants, while `EstimateInputTokens` and `Estimate` calculate projected token usage and costs for dry-run operations.

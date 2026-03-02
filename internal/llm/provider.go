@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"time"
 )
 
 // SummaryRequest contains everything needed to generate a file summary.
@@ -68,6 +71,37 @@ func (b *baseClient) postJSON(ctx context.Context, url string, payload, result a
 		return rawBody, resp.StatusCode, fmt.Errorf("parsing response: %w", err)
 	}
 	return rawBody, resp.StatusCode, nil
+}
+
+// retryableError wraps an error to signal that the operation may succeed if retried.
+type retryableError struct{ cause error }
+
+func (e retryableError) Error() string { return e.cause.Error() }
+func (e retryableError) Unwrap() error { return e.cause }
+
+// withRetry calls fn up to 5 times, backing off exponentially whenever fn
+// returns a retryableError. A random jitter of [0, base/2) is added to each
+// delay to stagger concurrent goroutines that hit an overload simultaneously.
+func withRetry(ctx context.Context, fn func() (string, TokenUsage, error)) (string, TokenUsage, error) {
+	const maxAttempts = 5
+	var re retryableError
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		s, u, err := fn()
+		if err == nil {
+			return s, u, nil
+		}
+		if !errors.As(err, &re) || attempt == maxAttempts-1 {
+			return "", TokenUsage{}, err
+		}
+		base := time.Second << attempt // 1s, 2s, 4s, 8s
+		delay := base + time.Duration(rand.Int63n(int64(base)/2))
+		select {
+		case <-ctx.Done():
+			return "", TokenUsage{}, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	panic("unreachable")
 }
 
 const systemPrompt = `You are a code documentation assistant for a tool called llmdoc. Your job is to write concise, accurate summaries of source code files.
