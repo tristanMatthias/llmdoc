@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -46,42 +47,63 @@ func newBaseClient(apiKey, model string) baseClient {
 
 // postJSON marshals payload as JSON, POSTs to url, and unmarshals the response
 // body into result. setHeaders is called after Content-Type is set so callers
-// can add auth and version headers. Returns the raw body and HTTP status code.
-func (b *baseClient) postJSON(ctx context.Context, url string, payload, result any, setHeaders func(*http.Request)) ([]byte, int, error) {
+// can add auth and version headers. Returns the raw body, HTTP status code, and
+// response headers (useful for Retry-After on 429/529 responses).
+func (b *baseClient) postJSON(ctx context.Context, url string, payload, result any, setHeaders func(*http.Request)) ([]byte, int, http.Header, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, 0, fmt.Errorf("marshaling request: %w", err)
+		return nil, 0, nil, fmt.Errorf("marshaling request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, fmt.Errorf("creating request: %w", err)
+		return nil, 0, nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setHeaders(req)
 	resp, err := b.client.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("sending request: %w", err)
+		return nil, 0, nil, fmt.Errorf("sending request: %w", err)
 	}
 	defer resp.Body.Close()
 	rawBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("reading response: %w", err)
+		return nil, resp.StatusCode, resp.Header, fmt.Errorf("reading response: %w", err)
 	}
 	if err := json.Unmarshal(rawBody, result); err != nil {
-		return rawBody, resp.StatusCode, fmt.Errorf("parsing response: %w", err)
+		return rawBody, resp.StatusCode, resp.Header, fmt.Errorf("parsing response: %w", err)
 	}
-	return rawBody, resp.StatusCode, nil
+	return rawBody, resp.StatusCode, resp.Header, nil
+}
+
+// parseRetryAfter reads the Retry-After response header and returns the
+// suggested wait duration. Returns 0 if the header is absent or non-numeric.
+func parseRetryAfter(h http.Header) time.Duration {
+	v := h.Get("retry-after")
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
 }
 
 // retryableError wraps an error to signal that the operation may succeed if retried.
-type retryableError struct{ cause error }
+// If wait is nonzero it is used as the delay instead of exponential backoff —
+// providers should populate it from the API's Retry-After response header.
+type retryableError struct {
+	cause error
+	wait  time.Duration
+}
 
 func (e retryableError) Error() string { return e.cause.Error() }
 func (e retryableError) Unwrap() error { return e.cause }
 
-// withRetry calls fn up to 5 times, backing off exponentially whenever fn
-// returns a retryableError. A random jitter of [0, base/2) is added to each
-// delay to stagger concurrent goroutines that hit an overload simultaneously.
+// withRetry calls fn up to 5 times, backing off whenever fn returns a
+// retryableError. If the error carries an explicit wait duration (from a
+// Retry-After header) that is used; otherwise exponential backoff with jitter
+// is applied (1s, 2s, 4s, 8s ± up to 50%).
 func withRetry(ctx context.Context, fn func() (string, TokenUsage, error)) (string, TokenUsage, error) {
 	const maxAttempts = 5
 	var re retryableError
@@ -93,8 +115,13 @@ func withRetry(ctx context.Context, fn func() (string, TokenUsage, error)) (stri
 		if !errors.As(err, &re) || attempt == maxAttempts-1 {
 			return "", TokenUsage{}, err
 		}
-		base := time.Second << attempt // 1s, 2s, 4s, 8s
-		delay := base + time.Duration(rand.Int63n(int64(base)/2))
+		var delay time.Duration
+		if re.wait > 0 {
+			delay = re.wait
+		} else {
+			base := time.Second << attempt // 1s, 2s, 4s, 8s
+			delay = base + time.Duration(rand.Int63n(int64(base)/2))
+		}
 		select {
 		case <-ctx.Done():
 			return "", TokenUsage{}, ctx.Err()

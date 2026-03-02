@@ -62,7 +62,7 @@ func (p *AnthropicProvider) summarizeOnce(ctx context.Context, req SummaryReques
 	}
 
 	var result anthropicResponse
-	rawBody, status, err := p.postJSON(ctx, anthropicAPIURL, payload, &result, func(r *http.Request) {
+	rawBody, status, headers, err := p.postJSON(ctx, anthropicAPIURL, payload, &result, func(r *http.Request) {
 		r.Header.Set("x-api-key", p.apiKey)
 		r.Header.Set("anthropic-version", anthropicVersion)
 	})
@@ -72,13 +72,17 @@ func (p *AnthropicProvider) summarizeOnce(ctx context.Context, req SummaryReques
 
 	if result.Error != nil {
 		apiErr := fmt.Errorf("anthropic API error (%s): %s", result.Error.Type, result.Error.Message)
-		if result.Error.Type == "overloaded_error" {
-			return "", TokenUsage{}, retryableError{apiErr}
+		switch result.Error.Type {
+		case "overloaded_error", "rate_limit_error":
+			return "", TokenUsage{}, retryableError{cause: apiErr, wait: parseRetryAfter(headers)}
 		}
 		return "", TokenUsage{}, apiErr
 	}
 	if status == http.StatusTooManyRequests || status == 529 {
-		return "", TokenUsage{}, retryableError{fmt.Errorf("anthropic API returned HTTP %d: %s", status, rawBody)}
+		return "", TokenUsage{}, retryableError{
+			cause: fmt.Errorf("anthropic API returned HTTP %d: %s", status, rawBody),
+			wait:  parseRetryAfter(headers),
+		}
 	}
 	if status != http.StatusOK {
 		return "", TokenUsage{}, fmt.Errorf("anthropic API returned HTTP %d: %s", status, rawBody)

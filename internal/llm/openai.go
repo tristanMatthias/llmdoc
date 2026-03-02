@@ -61,7 +61,7 @@ func (p *OpenAIProvider) summarizeOnce(ctx context.Context, req SummaryRequest) 
 	}
 
 	var result openaiResponse
-	rawBody, status, err := p.postJSON(ctx, openaiAPIURL, payload, &result, func(r *http.Request) {
+	rawBody, status, headers, err := p.postJSON(ctx, openaiAPIURL, payload, &result, func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+p.apiKey)
 	})
 	if err != nil {
@@ -71,12 +71,15 @@ func (p *OpenAIProvider) summarizeOnce(ctx context.Context, req SummaryRequest) 
 	if result.Error != nil {
 		apiErr := fmt.Errorf("openai API error (%s): %s", result.Error.Type, result.Error.Message)
 		if result.Error.Type == "rate_limit_exceeded" {
-			return "", TokenUsage{}, retryableError{apiErr}
+			return "", TokenUsage{}, retryableError{cause: apiErr, wait: parseRetryAfter(headers)}
 		}
 		return "", TokenUsage{}, apiErr
 	}
 	if status == http.StatusTooManyRequests {
-		return "", TokenUsage{}, retryableError{fmt.Errorf("openai API returned HTTP %d: %s", status, rawBody)}
+		return "", TokenUsage{}, retryableError{
+			cause: fmt.Errorf("openai API returned HTTP %d: %s", status, rawBody),
+			wait:  parseRetryAfter(headers),
+		}
 	}
 	if status != http.StatusOK {
 		return "", TokenUsage{}, fmt.Errorf("openai API returned HTTP %d: %s", status, rawBody)
