@@ -51,7 +51,8 @@ single LLM-ready view of your entire codebase.`,
 }
 
 // Execute runs the root command.
-func Execute() {
+func Execute(version string) {
+	rootCmd.Version = version
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
