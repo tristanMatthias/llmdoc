@@ -1,0 +1,52 @@
+# llmdoc configuration
+# https://github.com/tristanmatthias/llmdoc
+
+# LLM provider: "anthropic" or "openai"
+provider: anthropic
+
+# API key (recommended: use env var ANTHROPIC_API_KEY or OPENAI_API_KEY instead)
+api_key: ""
+
+# Model to use for generating summaries
+model: claude-sonnet-4-6
+
+# File extensions to annotate
+extensions:
+  - .go
+  - .ts
+  - .tsx
+  - .js
+  - .jsx
+  - .py
+  - .rs
+  - .java
+  - .rb
+  - .swift
+
+# Ignore patterns (gitignore-style, relative to project root)
+ignore:
+  - vendor/
+  - node_modules/
+  - .git/
+  - dist/
+  - build/
+  - "**/*.min.js"
+  - "**/*.pb.go"
+  - "**/*.generated.go"
+  - .llmdoc/
+  - .llmdoc.yaml
+  - .llmdoc.yml
+
+# Number of concurrent LLM calls (default: 4)
+concurrency: 4
+
+# Storage mode:
+#   inline - summaries stored as comment headers at the top of each source file
+#   index  - summaries stored in a separate index file; source files never modified
+mode: index
+
+# Index file path (only used when mode: index)
+index_file: .llmdoc/index.yaml
+
+# Force re-annotation even when file hash is unchanged
+force: false
