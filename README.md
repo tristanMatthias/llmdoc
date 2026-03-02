@@ -37,6 +37,18 @@ When you paste a large codebase into an LLM, you pay for tokens on every file â€
 
 ## Installation
 
+### macOS / Linux (install script)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tristanmatthias/llmdoc/main/install.sh | sh
+```
+
+To pin a specific version:
+
+```bash
+VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/tristanmatthias/llmdoc/main/install.sh | sh
+```
+
 ### go install
 
 ```bash
@@ -45,7 +57,7 @@ go install github.com/tristanmatthias/llmdoc@latest
 
 ### Pre-built binaries
 
-Download the latest binary for your platform from the [Releases page](https://github.com/tristanmatthias/llmdoc/releases).
+Download the latest binary for your platform from the [Releases page](https://github.com/tristanmatthias/llmdoc/releases), extract the archive, and move the binary onto your `PATH`.
 
 ### Build from source
 
