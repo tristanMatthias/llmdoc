@@ -23,8 +23,8 @@ each file. A hash in each block tracks changes so only modified files are re-ann
 Run 'llmdoc annotate' to add/update summaries, or 'llmdoc dump' to get a
 single LLM-ready view of your entire codebase.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip config loading for init command
-		if cmd.Name() == "init" {
+		// Skip config loading for commands that don't need it
+		if cmd.Name() == "init" || cmd.Name() == "update" {
 			return nil
 		}
 		var err error
